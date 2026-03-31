@@ -2,6 +2,7 @@ Sun.playerData = {
     identifier = nil,
     name = nil,
     group = "user",
+    loadout = {},
     money = {
         cash = 0,
         bank = 0,
@@ -11,10 +12,16 @@ Sun.playerData = {
         legal = {
             name = "unemployed",
             grade = 0,
+            label = "Unemployed",
+            gradeLabel = "",
+            salary = 0,
         },
         illegal = {
             name = nil,
             grade = 0,
+            label = "",
+            gradeLabel = "",
+            salary = 0,
         },
     },
     meta = {},
@@ -63,12 +70,20 @@ RegisterNetEvent("Sun:PlayerData:Load", function(data)
 
     if type(data.job) == "table" then
         if type(data.job.legal) == "table" then
-            Sun.playerData.job.legal.name = data.job.legal.name or "unemployed"
-            Sun.playerData.job.legal.grade = data.job.legal.grade or 0
+            local l = data.job.legal
+            Sun.playerData.job.legal.name = l.name or "unemployed"
+            Sun.playerData.job.legal.grade = l.grade or 0
+            Sun.playerData.job.legal.label = l.label or l.name or "Unemployed"
+            Sun.playerData.job.legal.gradeLabel = l.gradeLabel or ""
+            Sun.playerData.job.legal.salary = l.salary or 0
         end
         if type(data.job.illegal) == "table" then
-            Sun.playerData.job.illegal.name = data.job.illegal.name or nil
-            Sun.playerData.job.illegal.grade = data.job.illegal.grade or 0
+            local il = data.job.illegal
+            Sun.playerData.job.illegal.name = il.name or nil
+            Sun.playerData.job.illegal.grade = il.grade or 0
+            Sun.playerData.job.illegal.label = il.label or ""
+            Sun.playerData.job.illegal.gradeLabel = il.gradeLabel or ""
+            Sun.playerData.job.illegal.salary = il.salary or 0
         end
     end
 
@@ -78,9 +93,79 @@ RegisterNetEvent("Sun:PlayerData:Load", function(data)
         end
     end
 
+    if type(data.loadout) == "table" then
+        Sun.playerData.loadout = data.loadout
+        TriggerEvent("Sun:Loadout:Restore", data.loadout)
+    end
+
     TriggerServerEvent("Sun:Perms:Request")
 
     TriggerEvent("Sun:OnPlayerDataUpdated", "All", Sun.playerData)
+end)
+
+local function syncLoadout()
+    local ped = PlayerPedId()
+    local weapons = {}
+    local count = 0
+    local unarmed = GetHashKey("WEAPON_UNARMED")
+    local list = GetCurrentPedWeapon(ped, true) or {}
+    for i = 1, #list do
+        local hash = list[i]
+        if hash ~= unarmed then
+            count = count + 1
+            weapons[count] = {
+                weapon = hash,
+                ammo = GetAmmoInPedWeapon(ped, hash),
+                tint = GetPedWeaponTintIndex(ped, hash),
+            }
+        end
+    end
+    TriggerServerEvent("Sun:Loadout:Sync", weapons)
+end
+
+local function applyWeapons(weapons)
+    local player = PlayerPedId()
+    for i = 1, #weapons do
+        local items = weapons[i]
+        if type(items.weapon) == "number" and items.weapon ~= 0 then
+            GiveWeaponToPed(player, items.weapon, items.ammo or 0, false, false)
+            SetPedWeaponTintIndex(player, items.weapon, items.tint or 0)
+        end
+    end
+end
+
+local function loadOut(weapons)
+    if type(weapons) ~= "table" then
+        return
+    end
+    CreateThread(function() applyWeapons(weapons) end)
+end
+
+CreateThread(function()
+    while true do
+        Wait(300000)
+        if Sun.playerData.identifier then
+            syncLoadout()
+        end
+    end
+end)
+
+RegisterNetEvent("Sun:Loadout:Restore", function(weapons)
+    if type(weapons) ~= "table" then
+        return
+    end
+
+    Sun.playerData.loadout = weapons
+    loadOut(weapons)
+end)
+
+AddEventHandler("onResourceStop", function(resource)
+    if resource ~= GetCurrentResourceName() then return end
+    syncLoadout()
+end)
+
+AddEventHandler("Sun:Loadout:Restore", function(weapons)
+    loadOut(weapons)
 end)
 
 RegisterNetEvent("Sun:PlayerData:Update", function(key, value)
@@ -98,21 +183,35 @@ RegisterNetEvent("Sun:PlayerData:Update", function(key, value)
     elseif key == "job" and type(value) == "table" then
         if type(value.legal) == "table" or type(value.illegal) == "table" then
             if type(value.legal) == "table" then
-                Sun.playerData.job.legal.name = value.legal.name or "unemployed"
-                Sun.playerData.job.legal.grade = value.legal.grade or 0
+                local l = value.legal
+                Sun.playerData.job.legal.name = l.name or "unemployed"
+                Sun.playerData.job.legal.grade = l.grade or 0
+                Sun.playerData.job.legal.label = l.label or l.name or "Unemployed"
+                Sun.playerData.job.legal.gradeLabel = l.gradeLabel or ""
+                Sun.playerData.job.legal.salary = l.salary or 0
             end
             if type(value.illegal) == "table" then
-                Sun.playerData.job.illegal.name = value.illegal.name or nil
-                Sun.playerData.job.illegal.grade = value.illegal.grade or 0
+                local il = value.illegal
+                Sun.playerData.job.illegal.name = il.name or nil
+                Sun.playerData.job.illegal.grade = il.grade or 0
+                Sun.playerData.job.illegal.label = il.label or ""
+                Sun.playerData.job.illegal.gradeLabel = il.gradeLabel or ""
+                Sun.playerData.job.illegal.salary = il.salary or 0
             end
         else
             local jobType = value.type or "legal"
             if jobType == "legal" then
                 Sun.playerData.job.legal.name = value.name or "unemployed"
                 Sun.playerData.job.legal.grade = value.grade or 0
+                Sun.playerData.job.legal.label = value.label or value.name or "Unemployed"
+                Sun.playerData.job.legal.gradeLabel = value.gradeLabel or ""
+                Sun.playerData.job.legal.salary = value.salary or 0
             elseif jobType == "illegal" then
                 Sun.playerData.job.illegal.name = value.name or nil
                 Sun.playerData.job.illegal.grade = value.grade or 0
+                Sun.playerData.job.illegal.label = value.label or ""
+                Sun.playerData.job.illegal.gradeLabel = value.gradeLabel or ""
+                Sun.playerData.job.illegal.salary = value.salary or 0
             end
         end
     elseif key == "meta" and type(value) == "table" then

@@ -4,10 +4,36 @@ Sun.Money = Sun.Money or {}
 Sun.Money.Data = Sun.Money.Data or {}
 Sun.Jobs = Sun.Jobs or {}
 Sun.Jobs.Data = Sun.Jobs.Data or {}
+Sun.Jobs.Labels = Sun.Jobs.Labels or {}
+Sun.Jobs.GradeLabels = Sun.Jobs.GradeLabels or {}
 Sun.PlayerMeta = Sun.PlayerMeta or {}
 Sun.GroupData = Sun.GroupData or {}
 Sun.Vehicles = Sun.Vehicles or {}
 Sun.Vehicles.Data = Sun.Vehicles.Data or {}
+Sun.Weapons = Sun.Weapons or {}
+Sun.Weapons.Data = Sun.Weapons.Data or {}
+Sun.IdentifierData = Sun.IdentifierData or {}
+
+CreateThread(function()
+    local jobs = MySQL.query.await('SELECT name, label FROM jobs')
+    if jobs then
+        for i = 1, #jobs do
+            local j = jobs[i]
+            Sun.Jobs.Labels[j.name] = j.label
+        end
+    end
+    local grades = MySQL.query.await('SELECT job_name, grade, label, salary FROM job_grades')
+    if grades then
+        for i = 1, #grades do
+            local g = grades[i]
+            if not Sun.Jobs.GradeLabels[g.job_name] then
+                Sun.Jobs.GradeLabels[g.job_name] = {}
+            end
+            Sun.Jobs.GradeLabels[g.job_name][g.grade] = { label = g.label, salary = g.salary }
+        end
+    end
+    print('[Sun] Job loaded (' .. #(jobs or {}) .. ' jobs)')
+end)
 
 function Sun.Money:loadingMoney(identifier)
     local result = nil
@@ -87,16 +113,19 @@ function Sun.Money:addMoney(source, accountType, amount)
         Sun.Money.Data[identifier] = { cash = 0, bank = 0, black = 0 }
     end
 
+    local mData = Sun.Money.Data[identifier]
     local maxValues = {
         cash = Sun.Config.money.defaultMoneyLiquidMax,
         bank = Sun.Config.money.defaultMoneyBankMax,
         black = Sun.Config.money.defaultMoneyBlackMax,
     }
 
-    local newAmount = (tonumber(Sun.Money.Data[identifier][accountType]) or 0) + amount
+    local newAmount = (tonumber(mData[accountType]) or 0) + amount
     local cap = maxValues[accountType]
-    Sun.Money.Data[identifier][accountType] = cap and math.min(newAmount, cap) or newAmount
-    Sun.Money.Data[identifier]._dirty = true
+    local final = newAmount
+    if cap and newAmount > cap then final = cap end
+    mData[accountType] = final
+    mData._dirty = true
 
     return true
 end
@@ -110,16 +139,17 @@ function Sun.Money:removeMoney(source, accountType, amount)
 
     if amount <= 0 then return false end
 
-    if not Sun.Money.Data[identifier] then return false end
+    local mData = Sun.Money.Data[identifier]
+    if not mData then return false end
 
-    local current = tonumber(Sun.Money.Data[identifier][accountType]) or 0
+    local current = tonumber(mData[accountType]) or 0
 
     if current < amount then
         return false
     end
 
-    Sun.Money.Data[identifier][accountType] = current - amount
-    Sun.Money.Data[identifier]._dirty = true
+    mData[accountType] = current - amount
+    mData._dirty = true
 
     return true
 end
@@ -131,12 +161,14 @@ function Sun.Money:setMoney(source, accountType, amount)
     local identifier = player.identifier
     amount = tonumber(amount) or 0
 
-    if not Sun.Money.Data[identifier] then
+    local mData = Sun.Money.Data[identifier]
+    if not mData then
         Sun.Money.Data[identifier] = { cash = 0, bank = 0, black = 0 }
+        mData = Sun.Money.Data[identifier]
     end
 
-    Sun.Money.Data[identifier][accountType] = amount
-    Sun.Money.Data[identifier]._dirty = true
+    mData[accountType] = amount
+    mData._dirty = true
 
     return true
 end
@@ -163,14 +195,43 @@ function Sun.Jobs:loadingJobs(identifier)
     }
 end
 
+function Sun.Jobs:buildObject(jobName, grade)
+    local gradeData = Sun.Jobs.GradeLabels[jobName] and Sun.Jobs.GradeLabels[jobName][grade] or {}
+    return {
+        name = jobName or "unemployed",
+        grade = grade or 0,
+        label = Sun.Jobs.Labels[jobName] or jobName or "Unemployed",
+        gradeLabel = gradeData.label or "",
+        salary = gradeData.salary or 0,
+    }
+end
+
+function Sun.Weapons:load(identifier)
+    local result = nil
+    pcall(function()
+        result = MySQL.single.await('SELECT loadout FROM users WHERE identifier = ? LIMIT 1', { identifier })
+    end)
+    if not result or not result.loadout then return {} end
+    local ok, weapons = pcall(json.decode, result.loadout)
+    return (ok and type(weapons) == "table") and weapons or {}
+end
+
+function Sun.Weapons:save(identifier)
+    local data = self.Data[identifier]
+    if not data then return end
+    local ok, encoded = pcall(json.encode, data)
+    if not ok then return end
+    MySQL.update('UPDATE users SET loadout = ? WHERE identifier = ?', { encoded, identifier })
+end
+
 function Sun.Jobs:sync(source, identifier)
     local data = Sun.Jobs.Data[identifier] or {}
     local legal = data.legal or {}
     local illegal = data.illegal or {}
 
     TriggerClientEvent("Sun:PlayerData:Update", source, "job", {
-        legal = { name = legal.name or "unemployed", grade = legal.grade or 0 },
-        illegal = { name = illegal.name or nil, grade = illegal.grade or 0 },
+        legal = Sun.Jobs:buildObject(legal.name, legal.grade),
+        illegal = Sun.Jobs:buildObject(illegal.name, illegal.grade),
     })
 end
 
@@ -470,11 +531,12 @@ function PlayerMethods:addVehicle(plate, model)
         Sun.Vehicles.Data[self.identifier] = {}
     end
 
-    table.insert(Sun.Vehicles.Data[self.identifier], {
+    local vData = Sun.Vehicles.Data[self.identifier]
+    vData[#vData + 1] = {
         plate = plate,
         model = model,
         stored = true,
-    })
+    }
 
     return true
 end
@@ -495,9 +557,10 @@ function PlayerMethods:removeVehicle(plate)
 
     local vehicles = Sun.Vehicles.Data[self.identifier]
     if vehicles then
-        for i, v in ipairs(vehicles) do
-            if v.plate == plate then
-                table.remove(vehicles, i)
+        for i = 1, #vehicles do
+            if vehicles[i].plate == plate then
+                vehicles[i] = vehicles[#vehicles]
+                vehicles[#vehicles] = nil
                 break
             end
         end
@@ -512,6 +575,30 @@ function PlayerMethods:triggerEvent(eventName, ...)
     return true
 end
 
+function PlayerMethods:kick(reason)
+    DropPlayer(self.source, type(reason) == "string" and reason or "Kicked by admin")
+end
+
+function PlayerMethods:ban(reason, bannedBy)
+    local banReason = type(reason) == "string" and reason or "Banned"
+    MySQL.insert(
+        'INSERT INTO sun_bans (identifier, reason, banned_by) VALUES (?, ?, ?)',
+        { self.identifier, banReason, type(bannedBy) == "string" and bannedBy or "Server" }
+    )
+    DropPlayer(self.source, "Banned: " .. banReason)
+end
+
+function PlayerMethods:getLoadout()
+    return Sun.Weapons.Data[self.identifier] or {}
+end
+
+function PlayerMethods:setLoadout(weapons)
+    if type(weapons) ~= "table" then return false end
+    Sun.Weapons.Data[self.identifier] = weapons
+    TriggerClientEvent("Sun:Loadout:Restore", self.source, weapons)
+    return true
+end
+
 local function createPlayer(source)
     local identifier = getIdentifier(source)
     if not identifier then return nil end
@@ -520,6 +607,7 @@ local function createPlayer(source)
         source = source,
         identifier = identifier,
         name = GetPlayerName(source) or nil,
+        identifiers = Sun.IdentifierData[source] or {},
     }, PlayerMethods)
 end
 
@@ -542,10 +630,12 @@ end
 
 function Sun:getPlayers()
     local playersList = {}
+    local count = 0
 
     for _, player in pairs(self.Players) do
         if player then
-            table.insert(playersList, player)
+            count = count + 1
+            playersList[count] = player
         end
     end
 
@@ -569,6 +659,7 @@ AddEventHandler("Sun:LoadingCharacter", function(source)
     Sun.Jobs:sync(source, identifier)
 
     Sun:getGroup(source, true)
+    Sun.Weapons.Data[identifier] = Sun.Weapons:load(identifier)
 
     local vehiclesResult = nil
     pcall(function()
@@ -594,10 +685,11 @@ AddEventHandler("Sun:LoadingCharacter", function(source)
             black = tonumber(moneyData.black) or 0,
         },
         job = {
-            legal = { name = legalJob.name or "unemployed", grade = legalJob.grade or 0 },
-            illegal = { name = illegalJob.name or nil, grade = illegalJob.grade or 0 },
+            legal = Sun.Jobs:buildObject(legalJob.name, legalJob.grade),
+            illegal = Sun.Jobs:buildObject(illegalJob.name, illegalJob.grade),
         },
         meta = Sun.PlayerMeta[identifier] or {},
+        loadout = Sun.Weapons.Data[identifier] or {},
     })
 end)
 
@@ -610,11 +702,14 @@ AddEventHandler("playerDropped", function()
     local identifier = player.identifier
 
     Sun.Money:saveMoney(identifier)
+    Sun.Weapons:save(identifier)
     Sun.Money.Data[identifier] = nil
     Sun.Jobs.Data[identifier] = nil
     Sun.PlayerMeta[identifier] = nil
     Sun.GroupData[identifier] = nil
     Sun.Vehicles.Data[identifier] = nil
+    Sun.Weapons.Data[identifier] = nil
+    Sun.IdentifierData[src] = nil
 
     Sun.Players[src] = nil
 end)
@@ -657,6 +752,19 @@ RegisterNetEvent("Sun:ReloadRequest", function()
     Sun.reloadRateLimit[src] = GetGameTimer()
 
     TriggerEvent("Sun:LoadingCharacter", src)
+end)
+
+RegisterNetEvent("Sun:Loadout:Sync", function(weapons)
+    local src = source
+    if type(src) ~= "number" or src < 1 then return end
+    local player = Sun:getPlayer(src)
+    if not player then return end
+    if type(weapons) ~= "table" or #weapons > 50 then return end
+    for i = 1, #weapons do
+        local item = weapons[i]
+        if type(item) ~= "table" or type(item.weapon) ~= "number" then return end
+    end
+    Sun.Weapons.Data[player.identifier] = weapons
 end)
 
 CreateThread(function()

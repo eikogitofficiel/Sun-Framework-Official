@@ -1,3 +1,5 @@
+local type, tonumber = type, tonumber
+
 local function isAdmin(source)
     if source == 0 then
         return true

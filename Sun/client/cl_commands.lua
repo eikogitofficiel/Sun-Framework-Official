@@ -50,7 +50,9 @@ function Sun:initializeCommands()
             return
         end
 
-        for _, v in ipairs(GetGamePool('CVehicle')) do
+        local pool = GetGamePool('CVehicle')
+        for i = 1, #pool do
+            local v = pool[i]
             if DoesEntityExist(v) then
                 if #(playerCoord - GetEntityCoords(v)) <= distanceDv then
                     SetEntityAsMissionEntity(v, true, true)

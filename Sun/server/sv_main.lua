@@ -9,6 +9,19 @@ local function registerPlayerIdentifiers(source)
     if ok and type(identifier) == "string" and identifier ~= "" then
         listPlayers[source] = identifier
         listPlayerIdentifier[identifier] = source
+
+        Sun.IdentifierData = Sun.IdentifierData or {}
+        Sun.IdentifierData[source] = {}
+        local idData = Sun.IdentifierData[source]
+        for i = 0, GetNumPlayerIdentifiers(source) - 1 do
+            local id = GetPlayerIdentifier(source, i)
+            if id then
+                local idType = id:match("^(.-):")
+                if idType then
+                    idData[idType] = id
+                end
+            end
+        end
     end
 end
 
@@ -61,6 +74,19 @@ RegisterNetEvent("Sun:CallBack:Connexion", function()
 
     local identifier = Sun:getIdentifier(src)
     if not identifier then return end
+
+    local ban = nil
+    pcall(function()
+        ban = MySQL.single.await(
+            'SELECT reason FROM sun_bans WHERE identifier = ? AND (expire IS NULL OR expire > UNIX_TIMESTAMP()) LIMIT 1',
+            { identifier }
+        )
+    end)
+
+    if ban then
+        DropPlayer(src, "You are banned: " .. (ban.reason or "No reason given"))
+        return
+    end
 
     TriggerEvent("Sun:LoadingCharacter", src)
 end)

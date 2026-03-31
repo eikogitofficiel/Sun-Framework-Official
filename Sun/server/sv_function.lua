@@ -246,12 +246,13 @@ RegisterNetEvent("Sun:Callback:Trigger", function(data)
     local args = data.args or {}
 
     if type(name) ~= "string" then return end
-    if string.len(name) > 50 or not string.match(name, "^[%w_:%-]+$") then return end
+    if #name > 50 or not name:match("^[%w_:%-]+$") then return end
     if type(requestCallbackId) ~= "number" then return end
     if type(args) ~= "table" then return end
     if #args > 10 then return end
 
-    for _, arg in ipairs(args) do
+    for i = 1, #args do
+        local arg = args[i]
         if type(arg) == "function" then return end
         if type(arg) == "table" then
             for _, v in pairs(arg) do

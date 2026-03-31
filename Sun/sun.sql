@@ -32,7 +32,8 @@ CREATE TABLE `users` (
   `height` int(11) DEFAULT NULL,
   `group` varchar(50) NOT NULL DEFAULT 'user',
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
-  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `loadout` longtext DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
@@ -105,6 +106,21 @@ ALTER TABLE `jobs`
 
 ALTER TABLE `job_grades`
   MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+-- --------------------------------------------------------
+-- Table `sun_bans`
+-- --------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `sun_bans` (
+  `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `identifier` varchar(60) NOT NULL,
+  `reason` varchar(255) DEFAULT NULL,
+  `banned_by` varchar(60) DEFAULT NULL,
+  `expire` bigint DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `identifier` (`identifier`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 COMMIT;
 

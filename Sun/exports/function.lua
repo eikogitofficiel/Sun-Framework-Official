@@ -92,3 +92,18 @@ exports("RemovePlayerVehicle", function(source, plate)
     local player = Sun and Sun:getPlayer(source) or nil
     return player and player:removeVehicle(plate) or false
 end)
+
+exports("KickPlayer", function(source, reason)
+    local player = Sun and Sun:getPlayer(source) or nil
+    if player then player:kick(reason) end
+end)
+
+exports("BanPlayer", function(source, reason, bannedBy)
+    local player = Sun and Sun:getPlayer(source) or nil
+    if player then player:ban(reason, bannedBy) end
+end)
+
+exports("GetPlayerLoadout", function(source)
+    local player = Sun and Sun:getPlayer(source) or nil
+    return player and player:getLoadout() or {}
+end)
